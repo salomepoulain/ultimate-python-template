@@ -10,3 +10,4 @@ uv.lock
 .sourcery
 
 .vscode
+ruff.toml
