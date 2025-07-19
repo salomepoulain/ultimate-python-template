@@ -14,6 +14,8 @@ dependencies = [
     "pyyaml>=6.0.2",
     "types-pyyaml>=6.0.12.20250516",
     "typing>=3.10.0.0",
+    "toml>=0.10.2",
+    "types-toml>=0.10.8.20240310",
 ]
 
 [dependency-groups]
@@ -29,3 +31,20 @@ dev = [
 pythonpath="src"
 
 # uv run pytest -s .\tests\test_*.py
+
+
+[tool.myproject.dirs]
+tree = [
+    "src/",
+    "tests/",
+    "outputs/",
+    "outputs/{output_folder}/logs/",
+    "outputs/{output_folder}/data/",
+    "outputs/{output_folder}/configs_used/",
+    "config/",
+    "config/logging_configs",
+    "config.yaml",
+    "main.py",
+    ".env",
+    "pyproject.toml"
+]

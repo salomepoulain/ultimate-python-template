@@ -1,4 +1,4 @@
-# from cli import main
+from src.cli import main
 
 
 # def main():
@@ -22,8 +22,5 @@ if __name__ == "__main__":
     # This line is not executed when the script runs because it is preceded by a `#` symbol, which
     # indicates a comment in Python. Comments are ignored by the Python interpreter and are used to
     # provide explanations or notes within the code for developers to read.
-    from src.config import get_settings
-    
-    settings = get_settings()
-    print(settings.model_dump())
+    main()
 

@@ -31,6 +31,11 @@ LOG_RECORD_BUILTIN_ATTRS = {
     "taskName",
 }
 
+INPUT_LOGGER_PATH = "config/logging_configs"
+
+OUTPUT_LOGGER_PATH = "outputs/output_folder/logs"
+
+
 class MyJSONFormatter(logging.Formatter):
     def __init__(
         self,
@@ -72,12 +77,21 @@ class MyJSONFormatter(logging.Formatter):
 
         return message
 
-def setup_logging(json_config):
-    config_file = pathlib.Path(f"config/logging_configs/{json_config}.json") 
+# TODO: change to make it be output_folder path. do not have the dependency for the weird folder structure shit
+def setup_logging(input_config_json, output_folder, level):
+    config_file = pathlib.Path(f"{INPUT_LOGGER_PATH}/{input_config_json}.json") 
     with open(config_file) as f_in:
         config = json.load(f_in)
+        
+    for handler in config.get("handlers", {}).values():
+        if "filename" in handler:
+            log_path = pathlib.Path(OUTPUT_LOGGER_PATH.replace("output_folder", output_folder) / handler["filename"] )            
+            handler["filename"] = str(log_path)
 
     logging.config.dictConfig(config)
+    
+    logging.basicConfig(level=level)
+    
     queue_handler = logging.getHandlerByName("queue_handler")
     if queue_handler is not None:
         queue_handler.listener.start()

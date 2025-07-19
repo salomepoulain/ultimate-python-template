@@ -1,9 +1,9 @@
 program_config:
-  output_folder: DATE
+  output_folder_choice: DATE
 
 logger_config:
   level: DEBUG
-  # config_file: config.json
+  config_file: config.json
 
 # * these under here are to change
 

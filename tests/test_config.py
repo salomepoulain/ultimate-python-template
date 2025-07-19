@@ -92,10 +92,43 @@ def generic_temp_config(tmp_path, monkeypatch):
     return input_config_path, env_path
 
 def test_settings_loads_with_generic_temp_config(generic_temp_config, capsys):
-    from config import get_settings, Settings
+    from config import get_settings
     with pytest.raises(Exception):   # Or ValidationError
         get_settings()
     captured = capsys.readouterr()
     assert "Could not load settings!" in captured.out
     assert "config.yaml structure" in captured.out
     assert ".env structure" in captured.out
+    
+    
+def test_config_tree():
+    config = get_settings()
+    tree_from_config = config.program_config.dir_tree
+    print(tree_from_config)
+
+    output_folder = config.program_config.output_folder
+    print(output_folder)
+
+    assert isinstance(tree_from_config, list)
+    # Ensure that the placeholder is not present after replacement
+    assert "{output_folder}" not in "".join(tree_from_config)
+
+    # Build the expected paths with the actual output_folder
+    expected_paths = [
+        "src/",
+        "tests/",
+        "outputs/",
+        f"outputs/{output_folder}"
+        f"outputs/{output_folder}/logs/",
+        f"outputs/{output_folder}/data/",
+        f"outputs/{output_folder}/configs_used/",
+        "config/",
+        "config/logging_configs",
+        "config.yaml",
+        "main.py",
+        ".env",
+        "pyproject.toml"
+    ]
+    for path in expected_paths:
+        assert path in tree_from_config, f"Missing expected path: {path}"
+

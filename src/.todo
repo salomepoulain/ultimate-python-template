@@ -1,0 +1,12 @@
+
+Morgen:
+    ☐ Fix de tree generatie
+        ☐ zorg ervoor dat over bestaande folders en files worden geskipt
+        ☐ wil ik een globale tree ding file of houdt ik dit in mijn pyproject.toml
+    ☐ zorg dat de tree bestand variabeelen buiten zitten in de cli
+    ☐ voer de paths enz vanuit de cli in de andere modules?
+    ☐ zorg voor dus een clear connection point in elke module
+    ☐ maak meer logging tests
+    ☐ wil ik in mijn config ook de config.yaml??
+    ☐ wil ik commmand line arguments?? hoe wil ik dat die werken samen met mijn config.yaml?
+    

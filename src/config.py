@@ -9,6 +9,7 @@ from typing import (
 )
 from enum import Enum
 import datetime
+import toml
 
 INPUT_CONFIG_PATH = "config.yaml"
 
@@ -26,23 +27,55 @@ This approach ensures a clear, validated, and maintainable configuration for you
 
 
 class ProgramConfig(BaseModel):
-    output_folder: str = Field(
+    
+    output_folder_choice: str = Field(
         default="DATE",
         description=(
-            "Custom output folder. Use 'DATE' for outputs/fDD-MM-YYYY__HH-MM-SS."
+            "Custom output folder. Use 'DATE' for fDD-MM-YYYY__HH-MM-SS."
         )
     )
 
-    def get_output_folder(self) -> str:
-        """
-        Returns the output folder, replacing 'DATE' with a timestamp if present.
-        The format is 'outputs/fDD-MM-YYYY__HH-MM-SS'.
-        """
-        if self.output_folder == "DATE":
-            now = datetime.datetime.now()
-            return f"outputs/f{now.strftime('%d-%m-%Y__%H-%M-%S')}"
-        return self.output_folder
+    # def get_output_folder(self) -> str:
+    #     """
+    #     Returns the output folder, replacing 'DATE' with a timestamp if present.
+    #     The format is 'outputs/fDD-MM-YYYY__HH-MM-SS'.
+    #     """
+    #     if self.output_folder == "DATE":
+    #         now = datetime.datetime.now()
+    #         return f"outputs/f{now.strftime('%d-%m-%Y__%H-%M-%S')}"
+    #     return self.output_folder
 
+    _resolved_output_folder: Optional[str] = None
+    
+    @property
+    def output_folder(self) -> str:
+        if self._resolved_output_folder is not None:
+            return self._resolved_output_folder
+        if self.output_folder_choice == "DATE":
+            now = datetime.datetime.now()
+            self._resolved_output_folder = f"{now.strftime('%d-%m-%Y__%H-%M_%S')}"
+        else:
+            self._resolved_output_folder = self.output_folder_choice
+        return self._resolved_output_folder
+    
+    @property
+    def dir_tree(self) -> Any:
+        """
+        Loads the directory tree from pyproject.toml and replaces '{output_folder}' with the actual output folder.
+        """
+        config = toml.load("pyproject.toml")
+        tree = config["tool"]["myproject"]["dirs"]["tree"]
+
+        def replace_placeholders(obj):
+            if isinstance(obj, str):
+                return obj.replace("{output_folder}", self.output_folder)
+            elif isinstance(obj, dict):
+                return {k: replace_placeholders(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [replace_placeholders(v) for v in obj]
+            return obj
+
+        return replace_placeholders(tree)
 
 class LoggerConfig(BaseModel):
     """
