@@ -1,4 +1,18 @@
-logging:
-    level = DEBUG
-    config_file = "config.json"
+program_config:
+  output_folder: DATE
 
+logger_config:
+  level: DEBUG
+  # config_file: config.json
+
+# * these under here are to change
+
+wallet_config:
+  token: my_wallet_token
+  retry: 2
+  test:
+    hi: doei
+
+broker_config:
+  base_url: https://api.example.com
+  wallet_map: {"alice": "0xabc", "bob": "0xdef"}

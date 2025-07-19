@@ -83,16 +83,14 @@ def setup_logging(json_config):
         queue_handler.listener.start()
         atexit.register(queue_handler.listener.stop)
 
+# * setup custom filters here  -------------------------- 
 
-# -------------------------- setup custom filters here 
-
-# Note: filter to use
 class SpecialMessageFilter(logging.Filter):
     def filter(self, record):
         return "special" in record.getMessage()
 
 class NonErrorFilter(logging.Filter):
-    @override # ask what is this
+    @override
     def filter(self, record: logging.LogRecord) -> bool | logging.LogRecord:
         return record.levelno <= logging.INFO
 

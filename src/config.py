@@ -1,204 +1,459 @@
-import yaml
-from typing import Dict
-from pydantic import BaseModel, SecretStr, ValidationError, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Any, Type
-import logging
+from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic import BaseModel, SecretStr, Field
+from pydantic_core import PydanticUndefined
+from pydantic.fields import FieldInfo
+from typing import Literal
+import collections.abc
+from typing import (
+    get_origin, get_args, Dict, List, Any, Type, Union, Tuple, Optional
+)
+from enum import Enum
+import datetime
 
-CONFIG_PATH = "config.yaml"
+INPUT_CONFIG_PATH = "config.yaml"
+
+"""
+This module uses Pydantic to define and manage all application settings in a single `Settings` class.
+
+- You can add your own configuration structure by defining new Pydantic models in this file.
+- All non-secret input settings are expected to be provided in the YAML file at `INPUT_CONFIG_PATH`.
+- All secrets (fields of type `SecretStr` or similar) should be provided via the `.env` file or environment variables, not in YAML.
+- If the config or .env are not set up correctly, the expected structure for both will be printed to help you fix the issue.
+- You can specify default values and descriptions for each setting using Pydantic's `Field`.
+
+This approach ensures a clear, validated, and maintainable configuration for your project.
+"""
 
 
-class LoggingConfig(BaseModel):
-    level: str = "DEBUG"
-    config_file: str = "config.json"
-
-def EnvRequiredField(*, description: str = ""):
-    return Field(..., description=description, metadata={"env_required": True})
-
-base_url: str = EnvRequiredField(description="REQUIRED: Set in .env or environment")
-
-
-# -------------------------- setup custom config classes here
-
-# From YAML
-class WalletConfig(BaseSettings):
-    label: str
-    token: str
-    retry: int = 3
-
-# Uses .env
-class BrokerConfig(BaseSettings):
-    api_key: SecretStr
-    api_secret: SecretStr
-    base_url: str = Field(..., description="REQUIRED: Set in .env or environment", env_required=True)
-    
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="",
+class ProgramConfig(BaseModel):
+    output_folder: str = Field(
+        default="DATE",
+        description=(
+            "Custom output folder. Use 'DATE' for outputs/fDD-MM-YYYY__HH-MM-SS."
+        )
     )
 
-# pydantic v2
-class AppConfig(BaseSettings):
-    private_key: SecretStr
-    log_level: str = "INFO"
-    wallet_map: Dict[str, str] = Field(..., validation_alias="WALLET_MAP_JSON") # !Example
+    def get_output_folder(self) -> str:
+        """
+        Returns the output folder, replacing 'DATE' with a timestamp if present.
+        The format is 'outputs/fDD-MM-YYYY__HH-MM-SS'.
+        """
+        if self.output_folder == "DATE":
+            now = datetime.datetime.now()
+            return f"outputs/f{now.strftime('%d-%m-%Y__%H-%M-%S')}"
+        return self.output_folder
+
+
+class LoggerConfig(BaseModel):
+    """
+    Logging configuration.
+
+    level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+    config_file: Path to the logging configuration file.
+    """
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
+        default="INFO",
+        description=(
+            "Logging level. "
+            "One of: DEBUG, INFO, WARNING, ERROR, CRITICAL."
+        ),
+    )
+    config_file: str = Field(
+        default="config.json",
+        description="Path to the logging configuration file."
+    )
+
+# * create your own types starting here ---------------------------
+
+class TestConfig(BaseModel):
+    hi: str = "doei"
+
+class WalletConfig(BaseModel):
+    LABEL: SecretStr    # From .env only!
+    
+    token: str = Field(
+        default="hoi",
+        description="The token for the wallet. Default is 'hoi'.",
+        title="Wallet Token",
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9]+$",
+        examples=["mytoken123"],
+        alias="wallet_token",
+        deprecated=False,
+    )
+    
+    retry: int          = 3299
+    test: TestConfig
+
+class BrokerConfig(BaseModel):
+    API_KEY: SecretStr  # From .env only!
+    API_SECRET: SecretStr  # From .env only!
+    base_url: str
+    wallet_map: Dict[str, str] = Field(..., validation_alias="wallet_map")
+
+
+# * create your own types starting here ---------------------------
+
+class Settings(BaseSettings):
+    """
+    The main application settings class.
+
+    This class aggregates all configuration sections for the application.
+    You can add or remove config sections (as Pydantic models) as needed for your project.
+
+    Example fields:
+        - program_config: General program behavior settings.
+        - logger_config: Logging configuration.
+        - wallet_config: Wallet-related settings (example, replace as needed).
+        - broker_config: Broker/API-related settings (example, replace as needed).
+
+    A `Settings` instance represents the **fully validated, merged configuration** for your application,
+    combining values from config.yaml (for non-secret fields) and .env/environment variables (for secrets).
+
+    The class uses Pydantic's BaseSettings to:
+    - Load non-secret fields from YAML (via YamlConfigSettingsSource).
+    - Load secret fields (e.g., SecretStr) from .env or environment variables.
+    - Validate all fields and provide helpful error messages if configuration is missing or invalid.
+
+    You can access all config sections and values as attributes on the `Settings` instance.
+    """
+
+    program_config: ProgramConfig
+    logger_config: LoggerConfig
+    # Add your own config sections below as needed:
+    wallet_config: WalletConfig     # * Example config section (replace or remove as needed)
+    broker_config: BrokerConfig     # * Example config section (replace or remove as needed)
 
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_prefix="", 
+        env_nested_delimiter="__"  # Enables APP_CONFIG__PRIVATE_KEY style env vars
     )
 
-# -------------------------- add the unified in here
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type,
+        init_settings: Any,
+        env_settings: Any,
+        dotenv_settings: Any,
+        file_secret_settings: Any,
+    ) -> tuple:
+        """
+        Customizes the order of config sources for loading settings.
 
-class Settings(BaseModel):
-    logging: LoggingConfig
-    app: AppConfig
-    wallet: WalletConfig
-    broker: BrokerConfig
-    
-    
-# TODO: add custom fields/SeceretStr to know if its supposed to be in yaml or in .env
-# TODO: add defaults.yaml, that it should read from if no value was found, but only the key (or maybe DEFAULT)
-# TODO: change the validation helper functions for this
+        Loads config in this order:
+        1. YAML file (config.yaml)
+        2. Environment variables
+        3. .env file
+        4. Secret files
+        5. Direct init values
 
-# TODO: do tests
+        Args:
+            settings_cls: The settings class.
+            init_settings: Pydantic's init settings source.
+            env_settings: Pydantic's environment settings source.
+            dotenv_settings: Pydantic's dotenv settings source.
+            file_secret_settings: Pydantic's file secret settings source.
 
-
-# -------------------------- dont need to change this method
+        Returns:
+            tuple: The ordered sources for loading settings.
+        """
+        return (
+            YamlConfigSettingsSource(settings_cls, yaml_file=INPUT_CONFIG_PATH),
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+            init_settings,
+        )
+        
+# Entrypoint and main function
 def get_settings() -> Settings:
     """
-    Loads application settings by merging values from config.yaml and environment variables.
-
-    - Attempts to load configuration from CONFIG_PATH (YAML file).
-    - Validates that the YAML structure matches the Settings class.
-    - For each field in Settings, builds the configuration using both YAML and environment variables,
-      with environment variables taking precedence (via Pydantic BaseSettings).
-    - Returns a fully constructed Settings object.
-    - Logs and raises a ValidationError if configuration is invalid.
+    Loads and returns the application settings using Pydantic's Settings class.
 
     Returns:
         Settings: The fully constructed application settings object.
 
     Raises:
-        ValueError: If the YAML structure does not match the Settings class.
-        ValidationError: If the settings data is invalid.
+        Exception: If loading or validation fails, prints a helpful error message,
+                   shows the expected config.yaml and .env structure, and re-raises the exception.
     """
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            yaml_data = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        logging.warning(f"{CONFIG_PATH} not found, proceeding with env/.env only.")
-        yaml_data = {}
-
-    _check_config_keys_match(Settings, yaml_data)
-    settings_kwargs = _build_settings_kwargs(Settings, yaml_data)
-
-    try:
-        return Settings(**settings_kwargs)
-    except ValidationError as e:
-        logging.error("Configuration validation error:")
-        logging.error(e)
+    try: 
+        return Settings()  # type: ignore
+    except Exception as e:
+        print("\n[ERROR] Could not load settings! Please check your config.yaml and .env files.")
+        print("Make sure your .yaml and .env are structured like this:\n")
+        print_yaml_and_env(Settings)
+        print("\n[Exception details]:")
+        print(e)
         raise
 
-# -------------------------- Helper functions
+# ------ helper functions
 
-def _check_config_keys_match(settings_cls: Type[Any], yaml_data: Dict[str, Any]) -> None:
+def _is_secret_field(field: FieldInfo) -> bool:
     """
-    Validates that the top-level keys in the provided config.yaml data exactly match the fields
-    defined in the given Pydantic settings class.
+    Determines if a Pydantic model field is a secret field (SecretStr or similar).
 
-    Logs and raises a ValueError if there are any missing or extra keys, ensuring that the YAML
-    configuration structure stays in sync with the Python settings model.
-    If a mismatch is found, logs the expected YAML structure as a template.
+    Handles:
+    - Direct SecretStr fields.
+    - Optional[SecretStr], Union[SecretStr, ...], or Annotated[SecretStr, ...].
 
     Args:
-        settings_cls: The Pydantic settings class whose fields define the expected config structure.
-        yaml_data: The dictionary loaded from config.yaml to be validated.
+        field: The Pydantic model field to check.
 
-    Raises:
-        ValueError: If there are missing or extra keys in the YAML compared to the settings class.
+    Returns:
+        bool: True if the field is a SecretStr (or compatible), False otherwise.
     """
-    settings_keys = set(settings_cls.model_fields)
-    yaml_keys = set(yaml_data)
-    if yaml_keys ^ settings_keys:
-        missing = settings_keys - yaml_keys
-        extra = yaml_keys - settings_keys
-        if missing:
-            logging.error(f"Missing keys in config.yaml: {missing}")
-        if extra:
-            logging.error(f"Extra keys in config.yaml: {extra}")
-        # --- Suggest the expected YAML structure if there is a mismatch
-        mock_yaml = _generate_mock_yaml(settings_cls)
-        logging.error("Expected YAML structure (template):\n" + yaml.safe_dump(mock_yaml, sort_keys=False))
-        raise ValueError(
-            f"Config structure mismatch: "
-            f"{'; '.join([f'Missing keys in config.yaml: {missing}' if missing else '', f'Extra keys in config.yaml: {extra}' if extra else '']).strip('; ')}"
-        )
+    try:
+        typ = field.annotation
+    except AttributeError:
+        return False
+    # Handles direct SecretStr
+    if typ is SecretStr:
+        return True
+    # Handles Optional[SecretStr], Annotated[SecretStr], etc
+    if hasattr(typ, "__origin__"):
+        # e.g. Union[SecretStr, None], Annotated[SecretStr, ...]
+        args = getattr(typ, "__args__", ())
+        return any(t is SecretStr for t in args)
+    return False
 
 
-def _build_settings_kwargs(settings_cls: Type[Any], yaml_data: Dict[str, Any]) -> Dict[str, Any]:
+def _sample_value_for_type(tp: Any) -> Any:
     """
-    Dynamically build a dictionary of keyword arguments for instantiating a settings class.
+    Recursively return a 'sample' value for a given type annotation.
 
-    For each field in the settings class:
-      - If the field is a Pydantic model (BaseModel/BaseSettings), instantiate it using the corresponding section from yaml_data.
-        - This allows environment variables and .env to override YAML values (Pydantic's BaseSettings logic).
-      - If instantiation fails, fall back to the default constructor and log a warning.
-      - If the field is not a Pydantic model, use the YAML value directly.
+    Handles:
+    - Optionals and Unions: picks the first non-None type.
+    - Annotated: uses the first type argument.
+    - Dict/Mapping: returns a dict with sample key/value.
+    - List/Sequence: returns a list with a sample item.
+    - str, int, float, bool: returns a sample value.
+    - Enum: returns the first value or a placeholder.
+    - Nested BaseModel: recurses to generate a sample dict.
+    - Fallback: returns a string placeholder with the type name.
 
     Args:
-        settings_cls: The Pydantic settings class to instantiate.
-        yaml_data: The dictionary loaded from config.yaml.
+        tp: The type annotation to generate a sample value for.
 
     Returns:
-        dict: Keyword arguments for instantiating the settings class.
+        Any: A sample value matching the type annotation.
     """
-    settings_kwargs: Dict[str, Any] = {}
-    for field_name, field_info in settings_cls.model_fields.items():
-        field_type = field_info.annotation
-        yaml_section = yaml_data.get(field_name, {})
-        is_pydantic_model = hasattr(field_type, "model_validate")
-        if not is_pydantic_model:
-            settings_kwargs[field_name] = yaml_section
-            continue
-        try:
-            validated = field_type.model_validate(yaml_section)
-            settings_kwargs[field_name] = validated
-        except Exception as e:
-            logging.warning(
-                f"Failed to instantiate {field_type.__name__} from YAML for field '{field_name}': {e}. Using default constructor."
-            )
-            default_instance = field_type()
-            settings_kwargs[field_name] = default_instance
-    return settings_kwargs
+    origin = get_origin(tp)
+    args = get_args(tp)
+
+    # Handle Optionals and Unions
+    if origin is Union:
+        non_none = [a for a in args if a is not type(None)]
+        return _sample_value_for_type(non_none[0]) if non_none else None
+
+    # Handle Annotated
+    if origin is not None and hasattr(origin, "__origin__") and hasattr(origin, "__args__"):
+        return _sample_value_for_type(args[0])
+
+    # Handle Dict/Mapping
+    if origin in (dict, Dict, collections.abc.Mapping):
+        key_type, val_type = args or (str, str)
+        if key_type is str and val_type is str:
+            return '{"str": "str", "str": "str"}'
+        return {str(_sample_value_for_type(key_type)): _sample_value_for_type(val_type)}
+
+    # Handle List/Sequence
+    if origin in (list, List, collections.abc.Sequence):
+        item_type = args[0] if args else str
+        return [_sample_value_for_type(item_type)]
+
+    # Handle basic types
+    if tp is str:
+        return "<str>"
+    if tp is int:
+        return 0
+    if tp is float:
+        return 0.0
+    if tp is bool:
+        return False
+
+    # Handle Enums
+    if isinstance(tp, type) and issubclass(tp, Enum):
+        return list(tp)[0].value if len(tp) else "<enum>"
+
+    # Handle nested BaseModel
+    if isinstance(tp, type) and issubclass(tp, BaseModel):
+        return _generate_yaml_for_model(tp)
+
+    # Fallback: return a string placeholder with the type name
+    type_name = getattr(tp, "__name__", str(tp))
+    return f"<{type_name}>"
 
 
-def _generate_mock_yaml(settings_cls: Type[Any]) -> Dict[str, Any]:
+def _generate_yaml_for_model(model: Type[BaseModel], for_docs: bool = True) -> Dict[str, Any]:
     """
-    Recursively generates a dictionary representing the expected YAML structure
-    for the given Pydantic settings class, including nested models.
+    Generate a dictionary representing the expected YAML structure for a given Pydantic model.
+
+    Args:
+        model: The Pydantic BaseModel class to inspect.
+        for_docs: If True, include (value, comment) tuples for documentation; if False, include only values for real config.
 
     Returns:
-        Dict[str, Any]: A dictionary suitable for dumping as a YAML config template.
+        Dict[str, Any]: A dictionary mapping field names to either (value, comment) tuples (for docs)
+                        or just values (for real config).
+
+    - Secret fields (e.g., SecretStr) are skipped.
+    - Field descriptions are included as comments if for_docs is True.
+    - Nested BaseModel fields are recursed.
     """
     result: Dict[str, Any] = {}
-    for field_name, field_info in settings_cls.model_fields.items():
-        field_type = field_info.annotation
-        default = field_info.default if field_info.default is not None else None
-        if hasattr(field_type, "model_fields"):
-            nested: Dict[str, Any] = _generate_mock_yaml(field_type)
-            result[field_name] = nested
+    for name, field in model.model_fields.items():
+        if _is_secret_field(field):
             continue
-        value: Any = default if default is not None else f"<{getattr(field_type, '__name__', str(field_type))}>"
-        result[field_name] = value
+        field_type = field.annotation
+        comment = getattr(field, "description", None)
+        if field.default is not PydanticUndefined:
+            value = field.default
+        else:
+            value = _sample_value_for_type(field_type)
+        result[name] = (value, comment) if for_docs else value
     return result
 
 
-def _write_mock_yaml(settings_cls: Type[Any], filename: str = "mock_config.yaml") -> None:
+def _gather_all_keys_values(
+    data: Dict[str, Any], indent: int = 0, result: Optional[List[Tuple[int, str, Any, Optional[str]]]] = None
+) -> List[Tuple[int, str, Any, Optional[str]]]:
     """
-    Writes the expected YAML structure for the given settings class to a file.
+    Recursively gather all keys and values, with indent, for global alignment.
+
+    Args:
+        data: The dictionary to process.
+        indent: The current indentation level.
+        result: The list to append results to (used for recursion).
+
+    Returns:
+        List of tuples: (indent, key, value, comment)
     """
-    structure = _generate_mock_yaml(settings_cls)
-    with open(filename, "w") as f:
-        yaml.safe_dump(structure, f, sort_keys=False)
-    print(f"Mock config written to {filename}")
+    if result is None:
+        result = []
+    for key, val in data.items():
+        value, comment = val if isinstance(val, tuple) else (val, None)
+        result.append((indent, key, value, comment))
+        if isinstance(value, dict):
+            _gather_all_keys_values(value, indent + 1, result)
+    return result
+
+
+def _gather_comment_rows(
+    data: Dict[str, Any], indent: int = 0, result: Optional[List[Tuple[int, str, str, str]]] = None
+) -> List[Tuple[int, str, str, str]]:
+    """
+    Gather rows (indent, key, value, comment) for lines with comments.
+
+    Args:
+        data: The dictionary to process.
+        indent: The current indentation level.
+        result: The list to append results to (used for recursion).
+
+    Returns:
+        List of tuples: (indent, key_str, value, comment) for lines with comments.
+    """
+    if result is None:
+        result = []
+    for key, val in data.items():
+        value, comment = val if isinstance(val, tuple) else (val, None)
+        if comment:
+            pad = " " * (indent * 4)
+            key_str = f"{pad}{key}:"
+            result.append((indent, key_str, str(value), comment))
+        if isinstance(value, dict):
+            _gather_comment_rows(value, indent + 1, result)
+    return result
+
+
+def _dump_yaml_with_comment_alignment(data: Dict[str, Any]) -> str:
+    """
+    Print YAML so all values align vertically, and comments (if present) align to the right of the longest value needing a comment.
+    Adds a blank line before each new top-level key (indent==0) except the first.
+
+    Args:
+        data: The dictionary to render as YAML, where each value may be a (value, comment) tuple.
+
+    Returns:
+        str: The formatted YAML string with aligned values and comments, and blank lines between top-level keys.
+    """
+    # Gather all rows for key and value alignment
+    all_rows = _gather_all_keys_values(data)
+    comment_rows = _gather_comment_rows(data)
+    # Find max lengths for alignment
+    max_key_len = max(len(" " * (indent * 4) + key + ":") for indent, key, value, comment in all_rows)
+    # Only consider values with comments for comment alignment
+    max_value_len_with_comment = 0
+    if comment_rows:
+        max_value_len_with_comment = max(len(value) for _, _, value, _ in comment_rows)
+    # Print recursively, using these widths
+    def _print(data: Dict[str, Any], indent: int = 0, is_top_level: bool = False) -> list[str]:
+        lines = []
+        pad = " " * (indent * 4)
+        for idx, (key, val) in enumerate(data.items()):
+            value, comment = val if isinstance(val, tuple) else (val, None)
+            key_str = f"{pad}{key}:".ljust(max_key_len + 1)
+            # Add blank line before each new top-level key except the first
+            if is_top_level and idx > 0:
+                lines.append("")
+            if isinstance(value, dict):
+                lines.append(f"{pad}{key}:")
+                lines.extend(_print(value, indent + 1))
+            else:
+                # Align value, align comment if it exists
+                value_str = str(value)
+                if comment:
+                    value_str = value_str.ljust(max_value_len_with_comment + 4)
+                    line = f"{key_str}{value_str}# {comment}"
+                else:
+                    line = f"{key_str}{value_str}"
+                lines.append(line)
+        return lines
+    return "\n".join(_print(data, is_top_level=True))
+
+
+def _generate_env_for_model(model: Type[BaseModel], prefix: str = "") -> Dict[str, str]:
+    """
+    Generate a dictionary representing the expected .env structure for a given Pydantic model.
+
+    Args:
+        model: The Pydantic BaseModel class to inspect.
+        prefix: The prefix to use for environment variable names (used for nested models).
+
+    Returns:
+        Dict[str, str]: A dictionary mapping environment variable names to sample values or "<SECRET>" for secret fields.
+
+    - Secret fields (e.g., SecretStr) are represented as "<SECRET>".
+    - Nested BaseModel fields are recursed with double underscore delimiters.
+    - Fields ending with "JSON" are given a sample JSON string.
+    """
+    result: Dict[str, str] = {}
+    for name, field in model.model_fields.items():
+        env_key = (prefix + name).upper()
+        if _is_secret_field(field):
+            result[env_key] = "<SECRET>"
+        else:
+            field_type = field.annotation
+            if isinstance(field_type, type) and issubclass(field_type, BaseModel):
+                # Recurse only if it's a BaseModel subclass
+                result |= _generate_env_for_model(field_type, prefix=f"{env_key}__")
+            elif name.upper().endswith("JSON"):
+                result[env_key] = '{"sample": "value"}'
+    return result
+
+
+def print_yaml_and_env(SettingsClass: Type[BaseSettings]) -> None:
+    """
+    Prints the expected structure of config.yaml and .env for the given Pydantic settings class.
+    """
+    yaml_dict = _generate_yaml_for_model(SettingsClass, for_docs=True)
+    print("\n======================== config.yaml structure ========================\n")
+    # This will return a big string, ready to print
+    print(_dump_yaml_with_comment_alignment(yaml_dict))
+    env_dict = _generate_env_for_model(SettingsClass)
+    print("\n======================== .env structure ========================\n")
+    for key, value in env_dict.items():
+        print(f"{key}={value}")
+    print("\n\n")

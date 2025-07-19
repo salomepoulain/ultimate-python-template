@@ -5,7 +5,7 @@ from src.config import get_settings
 # from my_logging import setup_logging
 
 
-logger = logging.getLogger("__name__")  # __name__ is a common choice
+logger = logging.getLogger("__name__")
 
 
 @click.command()

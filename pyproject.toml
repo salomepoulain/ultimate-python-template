@@ -9,10 +9,10 @@ dependencies = [
     "datetime>=5.5",
     "logging>=0.4.9.6",
     "pathlib>=1.0.1",
-    "pyaml>=25.7.0",
-    "pydantic>=2.11.7",
+    "pydantic[mypy]>=2.11.7",
     "pydantic-settings>=2.10.1",
     "pyyaml>=6.0.2",
+    "types-pyyaml>=6.0.12.20250516",
     "typing>=3.10.0.0",
 ]
 
@@ -27,3 +27,5 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath="src"
+
+# uv run pytest -s .\tests\test_*.py
