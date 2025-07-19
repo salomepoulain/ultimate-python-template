@@ -1,0 +1,21 @@
+from src.cli import main
+
+
+
+# def main():
+    # setup_logging()
+    # logging.basicConfig(level="INFO")
+    # logger.debug("debug message", extra={"x": "hello"})
+    # logger.info("info message")
+    # logger.critical("this is such a special case of logging idk")
+    # logger.warning("warning message")
+    # logger.error("error message")
+    # logger.critical("critical message")
+    # try:
+    #     1 / 0
+    # except ZeroDivisionError:
+    #     logger.exception("exception message")
+
+
+if __name__ == "__main__":
+    main()
