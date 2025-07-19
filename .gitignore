@@ -7,7 +7,7 @@ dist/
 *.egg-info/
 
 uv.lock
-.sourcery
+.sourcery.yaml
 
-.vscode
+.vscode/
 ruff.toml
